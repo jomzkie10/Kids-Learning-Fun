@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar, BarChart3, CheckCircle } from 'lucide-react';
 
 // --- Audio Utility ---
 let audioCtx: AudioContext | null = null;
@@ -176,6 +176,20 @@ export default function App() {
     };
   });
 
+  const [dailyCompletedDate, setDailyCompletedDate] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('kids-learning-daily-completed');
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (dailyCompletedDate) {
+      localStorage.setItem('kids-learning-daily-completed', dailyCompletedDate);
+    }
+  }, [dailyCompletedDate]);
+
   useEffect(() => {
     localStorage.setItem('kids-learning-scores', JSON.stringify(scores));
   }, [scores]);
@@ -185,13 +199,23 @@ export default function App() {
     return () => setBgm(false);
   }, [musicEnabled]);
 
+  const CURRENT_DATE = new Date('2026-03-09T02:22:51-07:00');
+  const TODAY_STR = CURRENT_DATE.toDateString();
   const gameIds = ['math', 'puzzle', 'alphabet', 'memory', 'counting', 'colors', 'shapes', 'words'];
-  const dailyGameIndex = new Date().getDay() % gameIds.length;
+  const dailyGameIndex = CURRENT_DATE.getDay() % gameIds.length;
   const dailyGameId = gameIds[dailyGameIndex];
 
   const handleWin = (gameId: string) => {
-    const points = gameId === dailyGameId ? 2 : 1;
-    setScores(prev => ({ ...prev, [gameId]: prev[gameId] + points }));
+    let points = 1;
+    if (gameId === dailyGameId) {
+      if (dailyCompletedDate !== TODAY_STR) {
+        points = 10; // Bonus points for first completion today
+        setDailyCompletedDate(TODAY_STR);
+      } else {
+        points = 2; // Double points for subsequent plays today
+      }
+    }
+    setScores(prev => ({ ...prev, [gameId]: (prev[gameId] || 0) + points }));
   };
 
   let totalScore = 0;
@@ -248,10 +272,14 @@ export default function App() {
               <div className="bg-gradient-to-r from-indigo-500 to-purple-500 rounded-3xl p-6 text-white shadow-lg flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-bold flex items-center gap-2"><Calendar className="w-6 h-6" /> Daily Challenge</h2>
-                  <p className="opacity-90 mt-1">Play today's game for double points!</p>
+                  {dailyCompletedDate === TODAY_STR ? (
+                    <p className="opacity-90 mt-1 flex items-center gap-1"><CheckCircle className="w-4 h-4 text-green-300" /> Completed! You earned your bonus.</p>
+                  ) : (
+                    <p className="opacity-90 mt-1">Play today's game for +10 bonus points!</p>
+                  )}
                 </div>
                 <button onClick={() => setCurrentGame(dailyGameId)} className="bg-white text-purple-600 px-6 py-3 rounded-full font-bold shadow-md hover:scale-105 transition-transform">
-                  Play Now
+                  {dailyCompletedDate === TODAY_STR ? 'Play Again' : 'Play Now'}
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
