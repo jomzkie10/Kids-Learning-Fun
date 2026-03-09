@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Star, Trophy } from 'lucide-react';
+import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar } from 'lucide-react';
 
 // --- Audio Utility ---
 let audioCtx: AudioContext | null = null;
@@ -11,6 +11,43 @@ function initAudio() {
   }
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
+  }
+}
+
+// --- BGM Utility ---
+let bgmInterval: any = null;
+let isBgmPlaying = false;
+const melody = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63]; // C4, E4, G4, C5, G4, E4
+let noteIndex = 0;
+
+function setBgm(play: boolean) {
+  if (play === isBgmPlaying) return;
+  initAudio();
+  if (!audioCtx) return;
+  
+  if (play) {
+    isBgmPlaying = true;
+    bgmInterval = setInterval(() => {
+      if (!audioCtx || audioCtx.state !== 'running') return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = melody[noteIndex];
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      
+      gain.gain.setValueAtTime(0, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.02, audioCtx.currentTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+      
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.3);
+      
+      noteIndex = (noteIndex + 1) % melody.length;
+    }, 400);
+  } else {
+    isBgmPlaying = false;
+    clearInterval(bgmInterval);
   }
 }
 
@@ -73,10 +110,72 @@ const Confetti = () => {
   );
 };
 
+// --- Game State Hook ---
+function useGameState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [state, setState] = useState<T>(() => {
+    try {
+      const saved = localStorage.getItem(`kids-game-state-${key}`);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return initialValue;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`kids-game-state-${key}`, JSON.stringify(state));
+  }, [key, state]);
+
+  return [state, setState];
+}
+
 // --- Main App Component ---
 export default function App() {
   const [currentGame, setCurrentGame] = useState<string | null>(null);
-  const [score, setScore] = useState(0);
+  const [musicEnabled, setMusicEnabled] = useState(false);
+  const [showRewards, setShowRewards] = useState(false);
+  const [scores, setScores] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('kids-learning-scores');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to load scores', e);
+    }
+    return {
+      math: 0,
+      puzzle: 0,
+      alphabet: 0,
+      memory: 0,
+      counting: 0,
+      colors: 0,
+      shapes: 0,
+      words: 0
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('kids-learning-scores', JSON.stringify(scores));
+  }, [scores]);
+
+  useEffect(() => {
+    setBgm(musicEnabled);
+    return () => setBgm(false);
+  }, [musicEnabled]);
+
+  const gameIds = ['math', 'puzzle', 'alphabet', 'memory', 'counting', 'colors', 'shapes', 'words'];
+  const dailyGameIndex = new Date().getDay() % gameIds.length;
+  const dailyGameId = gameIds[dailyGameIndex];
+
+  const handleWin = (gameId: string) => {
+    const points = gameId === dailyGameId ? 2 : 1;
+    setScores(prev => ({ ...prev, [gameId]: prev[gameId] + points }));
+  };
+
+  let totalScore = 0;
+  for (const key in scores) {
+    totalScore += scores[key] || 0;
+  }
+  const getLevel = (gameId: string) => Math.floor((scores[gameId] || 0) / 5) + 1;
 
   return (
     <div className="min-h-screen bg-sky-100 font-sans text-slate-800 selection:bg-sky-300 overflow-x-hidden">
@@ -93,9 +192,18 @@ export default function App() {
             Kids Learning Fun
           </h1>
         </div>
-        <div className="flex items-center gap-2 bg-yellow-100 px-3 py-1 sm:px-4 sm:py-2 rounded-full border-2 border-yellow-300">
-          <Trophy className="w-5 h-5 text-yellow-500" />
-          <span className="text-lg sm:text-xl font-bold text-yellow-600">{score}</span>
+        <div className="flex items-center gap-2 sm:gap-4">
+          <button onClick={() => setMusicEnabled(!musicEnabled)} className="p-2 bg-sky-100 hover:bg-sky-200 rounded-full transition-colors">
+            {musicEnabled ? <Volume2 className="w-5 h-5 text-sky-600" /> : <VolumeX className="w-5 h-5 text-sky-600" />}
+          </button>
+          <button onClick={() => setShowRewards(true)} className="p-2 bg-yellow-100 hover:bg-yellow-200 rounded-full transition-colors flex items-center gap-2 border-2 border-yellow-300">
+            <Gift className="w-5 h-5 text-yellow-600" />
+            <span className="hidden sm:inline font-bold text-yellow-700">Rewards</span>
+          </button>
+          <div className="flex items-center gap-2 bg-yellow-100 px-3 py-1 sm:px-4 sm:py-2 rounded-full border-2 border-yellow-300">
+            <Trophy className="w-5 h-5 text-yellow-500" />
+            <span className="text-lg sm:text-xl font-bold text-yellow-600">{totalScore}</span>
+          </div>
         </div>
       </header>
 
@@ -108,34 +216,65 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 sm:mt-8"
+              className="flex flex-col gap-6 mt-4 sm:mt-8"
             >
-              <GameCard title="Math Dice" color="bg-red-400" border="border-red-600" icon="🎲" onClick={() => setCurrentGame('math')} />
-              <GameCard title="Puzzle Race" color="bg-blue-400" border="border-blue-600" icon="🧩" onClick={() => setCurrentGame('puzzle')} />
-              <GameCard title="Alphabet Match" color="bg-green-400" border="border-green-600" icon="🔤" onClick={() => setCurrentGame('alphabet')} />
-              <GameCard title="Memory Match" color="bg-purple-400" border="border-purple-600" icon="🃏" onClick={() => setCurrentGame('memory')} />
-              <GameCard title="Counting Game" color="bg-orange-400" border="border-orange-600" icon="🔢" onClick={() => setCurrentGame('counting')} />
+              <div className="bg-gradient-to-r from-indigo-500 to-purple-500 rounded-3xl p-6 text-white shadow-lg flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold flex items-center gap-2"><Calendar className="w-6 h-6" /> Daily Challenge</h2>
+                  <p className="opacity-90 mt-1">Play today's game for double points!</p>
+                </div>
+                <button onClick={() => setCurrentGame(dailyGameId)} className="bg-white text-purple-600 px-6 py-3 rounded-full font-bold shadow-md hover:scale-105 transition-transform">
+                  Play Now
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <GameCard title="Math Dice" color="bg-red-400" border="border-red-600" icon="🎲" score={scores.math || 0} level={getLevel('math')} isDaily={dailyGameId === 'math'} onClick={() => setCurrentGame('math')} />
+                <GameCard title="Puzzle Race" color="bg-blue-400" border="border-blue-600" icon="🧩" score={scores.puzzle || 0} level={getLevel('puzzle')} isDaily={dailyGameId === 'puzzle'} onClick={() => setCurrentGame('puzzle')} />
+                <GameCard title="Alphabet Match" color="bg-green-400" border="border-green-600" icon="🔤" score={scores.alphabet || 0} level={getLevel('alphabet')} isDaily={dailyGameId === 'alphabet'} onClick={() => setCurrentGame('alphabet')} />
+                <GameCard title="Memory Match" color="bg-purple-400" border="border-purple-600" icon="🃏" score={scores.memory || 0} level={getLevel('memory')} isDaily={dailyGameId === 'memory'} onClick={() => setCurrentGame('memory')} />
+                <GameCard title="Counting Game" color="bg-orange-400" border="border-orange-600" icon="🔢" score={scores.counting || 0} level={getLevel('counting')} isDaily={dailyGameId === 'counting'} onClick={() => setCurrentGame('counting')} />
+                <GameCard title="Color Catch" color="bg-pink-400" border="border-pink-600" icon="🎨" score={scores.colors || 0} level={getLevel('colors')} isDaily={dailyGameId === 'colors'} onClick={() => setCurrentGame('colors')} />
+                <GameCard title="Shape Sorter" color="bg-teal-400" border="border-teal-600" icon="🔺" score={scores.shapes || 0} level={getLevel('shapes')} isDaily={dailyGameId === 'shapes'} onClick={() => setCurrentGame('shapes')} />
+                <GameCard title="Word Builder" color="bg-indigo-400" border="border-indigo-600" icon="📝" score={scores.words || 0} level={getLevel('words')} isDaily={dailyGameId === 'words'} onClick={() => setCurrentGame('words')} />
+              </div>
             </motion.div>
           )}
-          {currentGame === 'math' && <MathDice key="math" onWin={() => setScore(s => s + 1)} />}
-          {currentGame === 'puzzle' && <PuzzleRace key="puzzle" onWin={() => setScore(s => s + 1)} />}
-          {currentGame === 'alphabet' && <AlphabetMatch key="alphabet" onWin={() => setScore(s => s + 1)} />}
-          {currentGame === 'memory' && <MemoryMatch key="memory" onWin={() => setScore(s => s + 1)} />}
-          {currentGame === 'counting' && <CountingGame key="counting" onWin={() => setScore(s => s + 1)} />}
+          {currentGame === 'math' && <MathDice key="math" level={getLevel('math')} onWin={() => handleWin('math')} />}
+          {currentGame === 'puzzle' && <PuzzleRace key="puzzle" level={getLevel('puzzle')} onWin={() => handleWin('puzzle')} />}
+          {currentGame === 'alphabet' && <AlphabetMatch key="alphabet" level={getLevel('alphabet')} onWin={() => handleWin('alphabet')} />}
+          {currentGame === 'memory' && <MemoryMatch key="memory" level={getLevel('memory')} onWin={() => handleWin('memory')} />}
+          {currentGame === 'counting' && <CountingGame key="counting" level={getLevel('counting')} onWin={() => handleWin('counting')} />}
+          {currentGame === 'colors' && <ColorCatch key="colors" level={getLevel('colors')} onWin={() => handleWin('colors')} />}
+          {currentGame === 'shapes' && <ShapeSorter key="shapes" level={getLevel('shapes')} onWin={() => handleWin('shapes')} />}
+          {currentGame === 'words' && <WordBuilder key="words" level={getLevel('words')} onWin={() => handleWin('words')} />}
         </AnimatePresence>
       </main>
+      {showRewards && <RewardsModal totalScore={totalScore} onClose={() => setShowRewards(false)} />}
     </div>
   );
 }
 
-function GameCard({ title, color, border, icon, onClick }: any) {
+function GameCard({ title, color, border, icon, score, level, isDaily, onClick }: any) {
   return (
     <motion.button
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.97 }}
       onClick={onClick}
-      className={`${color} text-white p-6 sm:p-8 rounded-3xl shadow-lg flex flex-col items-center justify-center gap-4 border-b-8 ${border} active:border-b-0 active:translate-y-2 transition-all`}
+      className={`${color} text-white p-6 sm:p-8 rounded-3xl shadow-lg flex flex-col items-center justify-center gap-4 border-b-8 ${border} active:border-b-0 active:translate-y-2 transition-all relative overflow-hidden`}
     >
+      {isDaily && (
+        <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-br-xl">
+          Daily 2x
+        </div>
+      )}
+      <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
+        <div className="bg-white/30 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
+          <Star className="w-4 h-4" /> {score}
+        </div>
+        <div className="bg-black/20 px-3 py-1 rounded-full text-xs font-bold">
+          Lvl {level}
+        </div>
+      </div>
       <span className="text-6xl">{icon}</span>
       <h2 className="text-2xl font-bold">{title}</h2>
     </motion.button>
@@ -144,32 +283,59 @@ function GameCard({ title, color, border, icon, onClick }: any) {
 
 // --- Mini Games ---
 
-function MathDice({ onWin }: { onWin: () => void, key?: string }) {
-  const [dice1, setDice1] = useState(1);
-  const [dice2, setDice2] = useState(1);
-  const [options, setOptions] = useState<number[]>([]);
+function MathDice({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('math', {
+    dice1: 1,
+    dice2: 1,
+    operation: '+' as '+' | '-',
+    options: [] as number[]
+  });
   const [showConfetti, setShowConfetti] = useState(false);
 
   const generateQuestion = () => {
-    const d1 = Math.floor(Math.random() * 6) + 1;
-    const d2 = Math.floor(Math.random() * 6) + 1;
-    setDice1(d1);
-    setDice2(d2);
-    const sum = d1 + d2;
-    const opts = new Set([sum]);
-    while(opts.size < 3) {
-      let wrong = sum + Math.floor(Math.random() * 5) - 2;
-      if (wrong > 0 && wrong !== sum) opts.add(wrong);
+    const maxDice = 6 + (level - 1) * 2;
+    let d1 = Math.floor(Math.random() * maxDice) + 1;
+    let d2 = Math.floor(Math.random() * maxDice) + 1;
+    
+    // Introduce subtraction at level 3+
+    const isSubtraction = level >= 3 && Math.random() > 0.5;
+    
+    let op: '+' | '-' = '+';
+    if (isSubtraction) {
+      // Ensure positive result
+      if (d2 > d1) {
+        const temp = d1;
+        d1 = d2;
+        d2 = temp;
+      }
+      op = '-';
     }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
+
+    const answer = isSubtraction ? d1 - d2 : d1 + d2;
+    const opts = new Set([answer]);
+    
+    while(opts.size < 3) {
+      let wrong = answer + Math.floor(Math.random() * 5) - 2;
+      if (wrong >= 0 && wrong !== answer) opts.add(wrong);
+    }
+    
+    setState({
+      dice1: d1,
+      dice2: d2,
+      operation: op,
+      options: Array.from(opts).sort(() => Math.random() - 0.5)
+    });
   };
 
   useEffect(() => {
-    generateQuestion();
+    if (state.options.length === 0) {
+      generateQuestion();
+    }
   }, []);
 
   const handleAnswer = (ans: number) => {
-    if (ans === dice1 + dice2) {
+    const correctAnswer = state.operation === '+' ? state.dice1 + state.dice2 : state.dice1 - state.dice2;
+    if (ans === correctAnswer) {
       playSound('correct');
       setShowConfetti(true);
       onWin();
@@ -185,16 +351,16 @@ function MathDice({ onWin }: { onWin: () => void, key?: string }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4">
       {showConfetti && <Confetti />}
-      <h2 className="text-3xl font-bold text-slate-700">Add the dice!</h2>
+      <h2 className="text-3xl font-bold text-slate-700">Math Time!</h2>
       <div className="flex items-center gap-2 sm:gap-4 text-4xl sm:text-6xl font-bold text-slate-600">
-        <Dice value={dice1} />
-        <span className="text-slate-400">+</span>
-        <Dice value={dice2} />
+        <Dice value={state.dice1} />
+        <span className="text-slate-400">{state.operation}</span>
+        <Dice value={state.dice2} />
         <span className="text-slate-400">=</span>
         <span className="text-slate-400">?</span>
       </div>
       <div className="flex gap-4 mt-8">
-        {options.map(opt => (
+        {state.options.map(opt => (
           <button
             key={opt}
             onClick={() => handleAnswer(opt)}
@@ -209,39 +375,51 @@ function MathDice({ onWin }: { onWin: () => void, key?: string }) {
 }
 
 function Dice({ value }: { value: number }) {
-  const dots = Array.from({ length: value });
+  const dots = Array.from({ length: Math.min(value, 9) }); // Max 9 dots for visual sanity
   return (
-    <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-2xl shadow-md border-2 border-slate-200 flex flex-wrap justify-center items-center p-2 gap-1">
-      {dots.map((_, i) => (
-        <div key={i} className="w-4 h-4 sm:w-5 sm:h-5 bg-slate-800 rounded-full" />
-      ))}
+    <div className="flex flex-col items-center gap-2">
+      <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-2xl shadow-md border-2 border-slate-200 flex flex-wrap justify-center items-center p-2 gap-1 relative">
+        {dots.map((_, i) => (
+          <div key={i} className="w-4 h-4 sm:w-5 sm:h-5 bg-slate-800 rounded-full" />
+        ))}
+        {value > 9 && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/90 rounded-xl text-3xl font-black text-slate-800">
+            {value}
+          </div>
+        )}
+      </div>
+      <span className="text-xl font-bold text-slate-500">{value}</span>
     </div>
   );
 }
 
-function PuzzleRace({ onWin }: { onWin: () => void, key?: string }) {
-  const [pieces, setPieces] = useState<number[]>([]);
-  const [placed, setPlaced] = useState<{ [key: number]: number }>({});
-  const [timeLeft, setTimeLeft] = useState(30);
-  const [isPlaying, setIsPlaying] = useState(false);
+function PuzzleRace({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('puzzle', {
+    pieces: [] as number[],
+    placed: {} as { [key: number]: number },
+    timeLeft: 30,
+    isPlaying: false
+  });
   const [showConfetti, setShowConfetti] = useState(false);
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
 
   useEffect(() => {
-    if (isPlaying && timeLeft > 0) {
-      const timer = setTimeout(() => setTimeLeft(t => t - 1), 1000);
+    if (state.isPlaying && state.timeLeft > 0) {
+      const timer = setTimeout(() => setState(s => ({ ...s, timeLeft: s.timeLeft - 1 })), 1000);
       return () => clearTimeout(timer);
-    } else if (timeLeft === 0 && isPlaying) {
+    } else if (state.timeLeft === 0 && state.isPlaying) {
       playSound('wrong');
-      setIsPlaying(false);
+      setState(s => ({ ...s, isPlaying: false }));
     }
-  }, [timeLeft, isPlaying]);
+  }, [state.timeLeft, state.isPlaying]);
 
   const startGame = () => {
-    setPieces([1, 2, 3, 4].sort(() => Math.random() - 0.5));
-    setPlaced({});
-    setTimeLeft(30);
-    setIsPlaying(true);
+    setState({
+      pieces: [1, 2, 3, 4].sort(() => Math.random() - 0.5),
+      placed: {},
+      timeLeft: Math.max(10, 30 - (level - 1) * 5),
+      isPlaying: true
+    });
     setShowConfetti(false);
     setSelectedPiece(null);
   };
@@ -250,16 +428,14 @@ function PuzzleRace({ onWin }: { onWin: () => void, key?: string }) {
     if (selectedPiece !== null) {
       if (selectedPiece === slotId) {
         playSound('correct');
-        setPlaced(prev => {
-          const next = { ...prev, [slotId]: selectedPiece };
-          if (Object.keys(next).length === 4) {
-            playSound('win');
-            setShowConfetti(true);
-            setIsPlaying(false);
-            onWin();
-          }
-          return next;
-        });
+        const nextPlaced = { ...state.placed, [slotId]: selectedPiece };
+        setState(s => ({ ...s, placed: nextPlaced }));
+        if (Object.keys(nextPlaced).length === 4) {
+          playSound('win');
+          setShowConfetti(true);
+          setState(s => ({ ...s, isPlaying: false }));
+          onWin();
+        }
         setSelectedPiece(null);
       } else {
         playSound('wrong');
@@ -273,18 +449,18 @@ function PuzzleRace({ onWin }: { onWin: () => void, key?: string }) {
       {showConfetti && <Confetti />}
       <div className="flex justify-between w-full max-w-md items-center px-4">
         <h2 className="text-3xl font-bold text-slate-700">Puzzle Race</h2>
-        <div className={`text-2xl font-bold ${timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
-          ⏱️ {timeLeft}s
+        <div className={`text-2xl font-bold ${state.timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
+          ⏱️ {state.timeLeft}s
         </div>
       </div>
 
-      {!isPlaying && timeLeft === 30 && (
+      {!state.isPlaying && state.timeLeft === 30 && (
         <button onClick={startGame} className="bg-blue-500 text-white px-8 py-4 rounded-full text-2xl font-bold shadow-lg border-b-8 border-blue-700 active:border-b-0 active:translate-y-2 mt-8">
           Start Race!
         </button>
       )}
 
-      {!isPlaying && timeLeft === 0 && (
+      {!state.isPlaying && state.timeLeft === 0 && (
         <div className="text-center mt-8">
           <h3 className="text-3xl font-bold text-red-500 mb-6">Time's up!</h3>
           <button onClick={startGame} className="bg-blue-500 text-white px-8 py-4 rounded-full text-2xl font-bold shadow-lg border-b-8 border-blue-700 active:border-b-0 active:translate-y-2">
@@ -293,7 +469,7 @@ function PuzzleRace({ onWin }: { onWin: () => void, key?: string }) {
         </div>
       )}
 
-      {isPlaying && (
+      {state.isPlaying && (
         <>
           <div className="grid grid-cols-2 gap-3 bg-slate-200 p-3 rounded-2xl w-64 h-64 sm:w-72 sm:h-72 shadow-inner">
             {[1, 2, 3, 4].map(slot => (
@@ -303,7 +479,7 @@ function PuzzleRace({ onWin }: { onWin: () => void, key?: string }) {
                 className={`border-4 border-dashed rounded-xl flex items-center justify-center transition-colors
                   ${selectedPiece !== null ? 'border-blue-400 bg-blue-50 cursor-pointer' : 'border-slate-300 bg-slate-100'}`}
               >
-                {placed[slot] ? (
+                {state.placed[slot] ? (
                   <PuzzlePiece id={slot} />
                 ) : (
                   <span className="text-slate-300 text-5xl font-bold opacity-50">{slot}</span>
@@ -313,8 +489,8 @@ function PuzzleRace({ onWin }: { onWin: () => void, key?: string }) {
           </div>
 
           <div className="flex gap-3 sm:gap-4 mt-4">
-            {pieces.map(p => {
-              if (placed[p]) return <div key={p} className="w-16 h-16 sm:w-20 sm:h-20" />;
+            {state.pieces.map(p => {
+              if (state.placed[p]) return <div key={p} className="w-16 h-16 sm:w-20 sm:h-20" />;
               return (
                 <div
                   key={p}
@@ -344,48 +520,68 @@ function PuzzlePiece({ id, fixedSize = false }: { id: number, fixedSize?: boolea
 }
 
 const ALPHABET_PAIRS = [
-  { letter: 'A', pic: '🍎', name: 'Apple' },
-  { letter: 'B', pic: '🐻', name: 'Bear' },
-  { letter: 'C', pic: '🐱', name: 'Cat' },
-  { letter: 'D', pic: '🐶', name: 'Dog' },
-  { letter: 'E', pic: '🐘', name: 'Elephant' },
-  { letter: 'F', pic: '🐸', name: 'Frog' },
+  { letter: 'A', lower: 'a', pic: '🍎', name: 'Apple' },
+  { letter: 'B', lower: 'b', pic: '🐻', name: 'Bear' },
+  { letter: 'C', lower: 'c', pic: '🐱', name: 'Cat' },
+  { letter: 'D', lower: 'd', pic: '🐶', name: 'Dog' },
+  { letter: 'E', lower: 'e', pic: '🐘', name: 'Elephant' },
+  { letter: 'F', lower: 'f', pic: '🐸', name: 'Frog' },
+  { letter: 'G', lower: 'g', pic: '🦒', name: 'Giraffe' },
+  { letter: 'H', lower: 'h', pic: '🚁', name: 'Helicopter' },
+  { letter: 'I', lower: 'i', pic: '🍦', name: 'Ice Cream' },
+  { letter: 'J', lower: 'j', pic: '🧃', name: 'Juice' },
 ];
 
-function AlphabetMatch({ onWin }: { onWin: () => void, key?: string }) {
-  const [letters, setLetters] = useState<any[]>([]);
-  const [pics, setPics] = useState<any[]>([]);
+function AlphabetMatch({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('alphabet', {
+    letters: [] as any[],
+    pics: [] as any[],
+    matched: [] as string[],
+    pairCount: 4
+  });
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
-  const [matched, setMatched] = useState<Set<string>>(new Set());
   const [showConfetti, setShowConfetti] = useState(false);
 
   const startRound = () => {
-    const shuffled = [...ALPHABET_PAIRS].sort(() => Math.random() - 0.5).slice(0, 4);
-    setLetters([...shuffled].sort(() => Math.random() - 0.5));
-    setPics([...shuffled].sort(() => Math.random() - 0.5));
-    setMatched(new Set());
+    const currentPairCount = Math.min(6, 3 + Math.floor(level / 2));
+    const shuffled = [...ALPHABET_PAIRS].sort(() => Math.random() - 0.5).slice(0, currentPairCount);
+    
+    // Mix uppercase and lowercase based on level
+    const useLowercase = level >= 2;
+    
+    const letterItems = shuffled.map(item => ({
+      ...item,
+      displayLetter: (useLowercase && Math.random() > 0.5) ? item.lower : item.letter
+    }));
+
+    setState({
+      pairCount: currentPairCount,
+      letters: [...letterItems].sort(() => Math.random() - 0.5),
+      pics: [...letterItems].sort(() => Math.random() - 0.5),
+      matched: []
+    });
     setSelectedLetter(null);
     setShowConfetti(false);
   };
 
   useEffect(() => {
-    startRound();
+    if (state.letters.length === 0) {
+      startRound();
+    }
   }, []);
 
   const handlePicClick = (letter: string) => {
     if (!selectedLetter) return;
     if (selectedLetter === letter) {
       playSound('correct');
-      setMatched(prev => {
-        const next = new Set(prev).add(letter);
-        if (next.size === 4) {
-          playSound('win');
-          setShowConfetti(true);
-          onWin();
-          setTimeout(startRound, 3000);
-        }
-        return next;
-      });
+      const nextMatched = [...state.matched, letter];
+      setState(s => ({ ...s, matched: nextMatched }));
+      if (nextMatched.length === state.pairCount) {
+        playSound('win');
+        setShowConfetti(true);
+        onWin();
+        setTimeout(startRound, 3000);
+      }
       setSelectedLetter(null);
     } else {
       playSound('wrong');
@@ -401,8 +597,8 @@ function AlphabetMatch({ onWin }: { onWin: () => void, key?: string }) {
       <div className="flex justify-between w-full max-w-md gap-4 px-4">
         {/* Letters Column */}
         <div className="flex flex-col gap-4 flex-1">
-          {letters.map(item => {
-            const isMatched = matched.has(item.letter);
+          {state.letters.map(item => {
+            const isMatched = state.matched.includes(item.letter);
             const isSelected = selectedLetter === item.letter;
             return (
               <button
@@ -414,7 +610,7 @@ function AlphabetMatch({ onWin }: { onWin: () => void, key?: string }) {
                     isSelected ? 'bg-yellow-400 text-white border-yellow-600 ring-4 ring-yellow-200' : 
                     'bg-white text-slate-700 border-slate-300 shadow-md hover:bg-slate-50'}`}
               >
-                {item.letter}
+                {item.displayLetter}
               </button>
             );
           })}
@@ -422,8 +618,8 @@ function AlphabetMatch({ onWin }: { onWin: () => void, key?: string }) {
 
         {/* Pictures Column */}
         <div className="flex flex-col gap-4 flex-1">
-          {pics.map(item => {
-            const isMatched = matched.has(item.letter);
+          {state.pics.map(item => {
+            const isMatched = state.matched.includes(item.letter);
             return (
               <button
                 key={`p-${item.letter}`}
@@ -446,34 +642,58 @@ function AlphabetMatch({ onWin }: { onWin: () => void, key?: string }) {
 
 const MEMORY_EMOJIS = ['🚀', '🌟', '🎈', '🍕', '🎸', '🚗'];
 
-function MemoryMatch({ onWin }: { onWin: () => void, key?: string }) {
-  const [cards, setCards] = useState<{id: number, emoji: string, isFlipped: boolean, isMatched: boolean}[]>([]);
-  const [flippedIds, setFlippedIds] = useState<number[]>([]);
+function MemoryMatch({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('memory', {
+    cards: [] as {id: number, emoji: string, isFlipped: boolean, isMatched: boolean}[],
+    flippedIds: [] as number[],
+    isPeeking: false
+  });
   const [showConfetti, setShowConfetti] = useState(false);
 
   const startRound = () => {
-    const deck = [...MEMORY_EMOJIS, ...MEMORY_EMOJIS]
+    const pairCount = Math.min(6, 3 + Math.floor(level / 2));
+    const selectedEmojis = [...MEMORY_EMOJIS].sort(() => Math.random() - 0.5).slice(0, pairCount);
+    const deck = [...selectedEmojis, ...selectedEmojis]
       .sort(() => Math.random() - 0.5)
       .map((emoji, idx) => ({ id: idx, emoji, isFlipped: false, isMatched: false }));
-    setCards(deck);
-    setFlippedIds([]);
+    
+    setState({
+      cards: deck.map(c => ({ ...c, isFlipped: true })),
+      flippedIds: [],
+      isPeeking: true
+    });
     setShowConfetti(false);
+    
+    setTimeout(() => {
+      setState(s => ({
+        ...s,
+        cards: s.cards.map(c => ({ ...c, isFlipped: c.isMatched })),
+        isPeeking: false
+      }));
+    }, 2000);
   };
 
   useEffect(() => {
-    startRound();
+    if (state.cards.length === 0) {
+      startRound();
+    } else if (state.isPeeking) {
+      setState(s => ({
+        ...s,
+        cards: s.cards.map(c => ({ ...c, isFlipped: c.isMatched })),
+        isPeeking: false
+      }));
+    }
   }, []);
 
   const handleCardClick = (id: number) => {
-    if (flippedIds.length === 2) return;
-    const card = cards.find(c => c.id === id);
+    if (state.isPeeking || state.flippedIds.length === 2) return;
+    const card = state.cards.find(c => c.id === id);
     if (!card || card.isFlipped || card.isMatched) return;
 
-    const newFlipped = [...flippedIds, id];
-    setFlippedIds(newFlipped);
+    const newFlipped = [...state.flippedIds, id];
+    const updatedCards = state.cards.map(c => c.id === id ? { ...c, isFlipped: true } : c);
     
-    const updatedCards = cards.map(c => c.id === id ? { ...c, isFlipped: true } : c);
-    setCards(updatedCards);
+    setState(s => ({ ...s, flippedIds: newFlipped, cards: updatedCards }));
 
     if (newFlipped.length === 2) {
       const [id1, id2] = newFlipped;
@@ -482,24 +702,24 @@ function MemoryMatch({ onWin }: { onWin: () => void, key?: string }) {
 
       if (c1?.emoji === c2?.emoji) {
         playSound('correct');
+        const nextCards = updatedCards.map(c => c.id === id1 || c.id === id2 ? { ...c, isMatched: true } : c);
         setTimeout(() => {
-          setCards(prev => {
-            const next = prev.map(c => c.id === id1 || c.id === id2 ? { ...c, isMatched: true } : c);
-            if (next.every(c => c.isMatched)) {
-              playSound('win');
-              setShowConfetti(true);
-              onWin();
-              setTimeout(startRound, 4000);
-            }
-            return next;
-          });
-          setFlippedIds([]);
+          setState(s => ({ ...s, cards: nextCards, flippedIds: [] }));
+          if (nextCards.every(c => c.isMatched)) {
+            playSound('win');
+            setShowConfetti(true);
+            onWin();
+            setTimeout(startRound, 4000);
+          }
         }, 500);
       } else {
         playSound('wrong');
         setTimeout(() => {
-          setCards(prev => prev.map(c => c.id === id1 || c.id === id2 ? { ...c, isFlipped: false } : c));
-          setFlippedIds([]);
+          setState(s => ({
+            ...s,
+            cards: s.cards.map(c => c.id === id1 || c.id === id2 ? { ...c, isFlipped: false } : c),
+            flippedIds: []
+          }));
         }, 1000);
       }
     }
@@ -511,7 +731,7 @@ function MemoryMatch({ onWin }: { onWin: () => void, key?: string }) {
       <h2 className="text-3xl font-bold text-slate-700">Memory Match</h2>
       
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4">
-        {cards.map(card => (
+        {state.cards.map(card => (
           <button
             key={card.id}
             onClick={() => handleCardClick(card.id)}
@@ -531,32 +751,40 @@ function MemoryMatch({ onWin }: { onWin: () => void, key?: string }) {
 
 const COUNTING_EMOJIS = ['🐸', '🦋', '🍎', '🎈', '🚗', '🐥', '🦖', '🍦'];
 
-function CountingGame({ onWin }: { onWin: () => void, key?: string }) {
-  const [count, setCount] = useState(1);
-  const [emoji, setEmoji] = useState('🐸');
-  const [options, setOptions] = useState<number[]>([]);
+function CountingGame({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('counting', {
+    count: 1,
+    emoji: '🐸',
+    options: [] as number[]
+  });
   const [showConfetti, setShowConfetti] = useState(false);
 
   const generateQuestion = () => {
-    const newCount = Math.floor(Math.random() * 10) + 1;
+    const maxCount = 5 + level * 2;
+    const newCount = Math.floor(Math.random() * maxCount) + 1;
     const newEmoji = COUNTING_EMOJIS[Math.floor(Math.random() * COUNTING_EMOJIS.length)];
-    setCount(newCount);
-    setEmoji(newEmoji);
     
     const opts = new Set([newCount]);
     while(opts.size < 3) {
       let wrong = newCount + Math.floor(Math.random() * 5) - 2;
-      if (wrong > 0 && wrong !== newCount && wrong <= 15) opts.add(wrong);
+      if (wrong > 0 && wrong !== newCount && wrong <= maxCount + 5) opts.add(wrong);
     }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
+    
+    setState({
+      count: newCount,
+      emoji: newEmoji,
+      options: Array.from(opts).sort(() => Math.random() - 0.5)
+    });
   };
 
   useEffect(() => {
-    generateQuestion();
+    if (state.options.length === 0) {
+      generateQuestion();
+    }
   }, []);
 
   const handleAnswer = (ans: number) => {
-    if (ans === count) {
+    if (ans === state.count) {
       playSound('correct');
       setShowConfetti(true);
       onWin();
@@ -575,7 +803,7 @@ function CountingGame({ onWin }: { onWin: () => void, key?: string }) {
       <h2 className="text-3xl font-bold text-slate-700">How many?</h2>
       
       <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-inner border-4 border-orange-200 min-h-[200px] w-full max-w-lg flex flex-wrap justify-center items-center gap-2 sm:gap-4">
-        {Array.from({ length: count }).map((_, i) => (
+        {Array.from({ length: state.count }).map((_, i) => (
           <motion.div
             key={i}
             initial={{ scale: 0, rotate: -180 }}
@@ -583,19 +811,311 @@ function CountingGame({ onWin }: { onWin: () => void, key?: string }) {
             transition={{ type: 'spring', delay: i * 0.05 }}
             className="text-4xl sm:text-5xl"
           >
-            {emoji}
+            {state.emoji}
           </motion.div>
         ))}
       </div>
 
       <div className="flex gap-4 sm:gap-6 mt-4">
-        {options.map(opt => (
+        {state.options.map(opt => (
           <button
             key={opt}
             onClick={() => handleAnswer(opt)}
             className="bg-orange-500 text-white text-4xl font-bold w-20 h-20 sm:w-24 sm:h-24 rounded-2xl shadow-lg border-b-8 border-orange-700 active:border-b-0 active:translate-y-2 transition-all hover:bg-orange-400"
           >
             {opt}
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+const REWARDS = [
+  { score: 5, emoji: '🥉', name: 'Bronze Medal' },
+  { score: 10, emoji: '🥈', name: 'Silver Medal' },
+  { score: 20, emoji: '🥇', name: 'Gold Medal' },
+  { score: 50, emoji: '👑', name: 'Crown' },
+  { score: 100, emoji: '🏆', name: 'Grand Trophy' },
+];
+
+function RewardsModal({ totalScore, onClose }: { totalScore: number, onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-bold text-slate-800">Your Rewards</h2>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-800 text-3xl font-bold">&times;</button>
+        </div>
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+          {REWARDS.map(r => {
+            const unlocked = totalScore >= r.score;
+            return (
+              <div key={r.score} className={`flex items-center gap-4 p-4 rounded-2xl border-2 ${unlocked ? 'border-yellow-400 bg-yellow-50' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
+                <div className="text-4xl">{unlocked ? r.emoji : '🔒'}</div>
+                <div>
+                  <div className="font-bold text-lg text-slate-700">{r.name}</div>
+                  <div className="text-sm text-slate-500">Unlocks at {r.score} points</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// --- New Games ---
+
+const COLORS = [
+  { name: 'Red', hex: '#ef4444' },
+  { name: 'Blue', hex: '#3b82f6' },
+  { name: 'Green', hex: '#10b981' },
+  { name: 'Yellow', hex: '#eab308' },
+  { name: 'Purple', hex: '#a855f7' },
+  { name: 'Orange', hex: '#f97316' },
+  { name: 'Pink', hex: '#ec4899' },
+  { name: 'Brown', hex: '#8b4513' },
+];
+
+function ColorCatch({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('colors', {
+    targetColor: COLORS[0],
+    options: [] as typeof COLORS
+  });
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  const generateQuestion = () => {
+    const numOptions = Math.min(8, 3 + Math.floor(level / 2));
+    const shuffled = [...COLORS].sort(() => Math.random() - 0.5);
+    const selectedOptions = shuffled.slice(0, numOptions);
+    const target = selectedOptions[Math.floor(Math.random() * selectedOptions.length)];
+    setState({
+      targetColor: target,
+      options: selectedOptions
+    });
+  };
+
+  useEffect(() => {
+    if (state.options.length === 0) {
+      generateQuestion();
+    }
+  }, []);
+
+  const handleAnswer = (color: typeof COLORS[0]) => {
+    if (color.name === state.targetColor.name) {
+      playSound('correct');
+      setShowConfetti(true);
+      onWin();
+      setTimeout(() => {
+        setShowConfetti(false);
+        generateQuestion();
+      }, 2000);
+    } else {
+      playSound('wrong');
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
+      {showConfetti && <Confetti />}
+      <h2 className="text-3xl font-bold text-slate-700">Find the color:</h2>
+      <div className="text-5xl sm:text-6xl font-black text-slate-700">
+        {state.targetColor.name}
+      </div>
+      <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-4 max-w-lg">
+        {state.options.map(opt => (
+          <button
+            key={opt.name}
+            onClick={() => handleAnswer(opt)}
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full shadow-lg border-4 border-white active:scale-95 transition-transform hover:scale-105"
+            style={{ backgroundColor: opt.hex }}
+          />
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+const SHAPE_EMOJIS = [
+  { name: 'Circle', emoji: '🔴' },
+  { name: 'Square', emoji: '🟦' },
+  { name: 'Triangle', emoji: '🔺' },
+  { name: 'Star', emoji: '⭐' },
+  { name: 'Heart', emoji: '❤️' },
+  { name: 'Diamond', emoji: '♦️' },
+];
+
+function ShapeSorter({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('shapes', {
+    targetShape: SHAPE_EMOJIS[0],
+    options: [] as typeof SHAPE_EMOJIS
+  });
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  const generateQuestion = () => {
+    const numOptions = Math.min(6, 3 + Math.floor(level / 2));
+    const shuffled = [...SHAPE_EMOJIS].sort(() => Math.random() - 0.5);
+    const selectedOptions = shuffled.slice(0, numOptions);
+    const target = selectedOptions[Math.floor(Math.random() * selectedOptions.length)];
+    setState({
+      targetShape: target,
+      options: selectedOptions
+    });
+  };
+
+  useEffect(() => {
+    if (state.options.length === 0) {
+      generateQuestion();
+    }
+  }, []);
+
+  const handleAnswer = (shape: typeof SHAPE_EMOJIS[0]) => {
+    if (shape.name === state.targetShape.name) {
+      playSound('correct');
+      setShowConfetti(true);
+      onWin();
+      setTimeout(() => {
+        setShowConfetti(false);
+        generateQuestion();
+      }, 2000);
+    } else {
+      playSound('wrong');
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
+      {showConfetti && <Confetti />}
+      <h2 className="text-3xl font-bold text-slate-700">Find the:</h2>
+      <div className="text-5xl sm:text-6xl font-black text-teal-600">
+        {state.targetShape.name}
+      </div>
+      <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-4 max-w-lg">
+        {state.options.map(opt => (
+          <button
+            key={opt.name}
+            onClick={() => handleAnswer(opt)}
+            className="w-24 h-24 sm:w-32 sm:h-32 bg-white rounded-2xl shadow-lg border-b-8 border-slate-200 active:border-b-0 active:translate-y-2 transition-all flex items-center justify-center text-6xl sm:text-7xl hover:bg-slate-50"
+          >
+            {opt.emoji}
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+const WORDS = [
+  { word: 'CAT', emoji: '🐱' },
+  { word: 'DOG', emoji: '🐶' },
+  { word: 'SUN', emoji: '☀️' },
+  { word: 'CAR', emoji: '🚗' },
+  { word: 'PIG', emoji: '🐷' },
+  { word: 'COW', emoji: '🐮' },
+  { word: 'BUG', emoji: '🐛' },
+  { word: 'HAT', emoji: '🎩' },
+  { word: 'BAT', emoji: '🦇' },
+  { word: 'OWL', emoji: '🦉' },
+  { word: 'BIRD', emoji: '🐦' },
+  { word: 'FISH', emoji: '🐟' },
+  { word: 'FROG', emoji: '🐸' },
+  { word: 'BEAR', emoji: '🐻' },
+  { word: 'LION', emoji: '🦁' },
+  { word: 'DUCK', emoji: '🦆' },
+  { word: 'TREE', emoji: '🌳' },
+  { word: 'STAR', emoji: '⭐' },
+  { word: 'MOON', emoji: '🌙' },
+  { word: 'FIRE', emoji: '🔥' },
+];
+
+function WordBuilder({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
+  const [state, setState] = useGameState('words', {
+    target: WORDS[0],
+    spelled: [] as string[],
+    letters: [] as {char: string, id: number}[]
+  });
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  const generateQuestion = () => {
+    // Filter words based on level (longer words at higher levels)
+    const maxWordLength = level >= 3 ? 4 : 3;
+    const availableWords = WORDS.filter(w => w.word.length <= maxWordLength);
+    const newTarget = availableWords[Math.floor(Math.random() * availableWords.length)];
+    
+    let opts = newTarget.word.split('').map((char, i) => ({ char, id: i }));
+    
+    // Add extra random letters based on level
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const numExtra = Math.min(6, level);
+    for(let i=0; i<numExtra; i++) {
+      opts.push({ char: alphabet[Math.floor(Math.random() * alphabet.length)], id: i + 100 });
+    }
+    
+    setState({
+      target: newTarget,
+      spelled: [],
+      letters: opts.sort(() => Math.random() - 0.5)
+    });
+  };
+
+  useEffect(() => {
+    if (state.letters.length === 0) {
+      generateQuestion();
+    }
+  }, []);
+
+  const handleLetterClick = (letterObj: {char: string, id: number}) => {
+    const expectedChar = state.target.word[state.spelled.length];
+    if (letterObj.char === expectedChar) {
+      playSound('correct');
+      const newSpelled = [...state.spelled, letterObj.char];
+      
+      setState(s => ({
+        ...s,
+        spelled: newSpelled,
+        letters: s.letters.filter(l => l.id !== letterObj.id)
+      }));
+
+      if (newSpelled.length === state.target.word.length) {
+        playSound('win');
+        setShowConfetti(true);
+        onWin();
+        setTimeout(() => {
+          setShowConfetti(false);
+          generateQuestion();
+        }, 2000);
+      }
+    } else {
+      playSound('wrong');
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
+      {showConfetti && <Confetti />}
+      <h2 className="text-3xl font-bold text-slate-700">Spell the word!</h2>
+      <div className="text-8xl">{state.target.emoji}</div>
+      
+      {/* Word slots */}
+      <div className="flex gap-2 sm:gap-4">
+        {state.target.word.split('').map((char, i) => (
+          <div key={i} className="w-16 h-16 sm:w-20 sm:h-20 border-b-8 border-slate-300 flex items-center justify-center text-4xl sm:text-5xl font-bold text-indigo-600 uppercase">
+            {state.spelled[i] || ''}
+          </div>
+        ))}
+      </div>
+
+      {/* Available letters */}
+      <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mt-8 max-w-lg">
+        {state.letters.map(l => (
+          <button
+            key={l.id}
+            onClick={() => handleLetterClick(l)}
+            className="w-16 h-16 sm:w-20 sm:h-20 bg-indigo-500 text-white rounded-2xl shadow-lg border-b-8 border-indigo-700 active:border-b-0 active:translate-y-2 transition-all flex items-center justify-center text-4xl sm:text-5xl font-bold uppercase hover:bg-indigo-400"
+          >
+            {l.char}
           </button>
         ))}
       </div>
