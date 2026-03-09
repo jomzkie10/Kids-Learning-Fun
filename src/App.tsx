@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar } from 'lucide-react';
+import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar, BarChart3 } from 'lucide-react';
 
 // --- Audio Utility ---
 let audioCtx: AudioContext | null = null;
@@ -110,6 +110,28 @@ const Confetti = () => {
   );
 };
 
+// --- Level Complete Component ---
+const LevelComplete = ({ show }: { show: boolean }) => {
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          initial={{ scale: 0, opacity: 0, rotate: -10 }}
+          animate={{ scale: 1, opacity: 1, rotate: 0 }}
+          exit={{ scale: 0, opacity: 0, rotate: 10 }}
+          className="fixed inset-0 flex items-center justify-center z-40 pointer-events-none"
+        >
+          <div className="bg-yellow-400 text-white px-8 py-6 rounded-3xl shadow-2xl border-4 border-yellow-200 flex flex-col items-center gap-2">
+            <Star className="w-16 h-16 fill-white animate-[spin_3s_linear_infinite]" />
+            <h2 className="text-4xl font-black uppercase tracking-wider">Awesome!</h2>
+            <p className="text-xl font-bold opacity-90">+1 Star</p>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
 // --- Game State Hook ---
 function useGameState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
   const [state, setState] = useState<T>(() => {
@@ -134,6 +156,7 @@ export default function App() {
   const [currentGame, setCurrentGame] = useState<string | null>(null);
   const [musicEnabled, setMusicEnabled] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [scores, setScores] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('kids-learning-scores');
@@ -193,6 +216,10 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          <button onClick={() => setShowDashboard(true)} className="p-2 bg-sky-100 hover:bg-sky-200 rounded-full transition-colors flex items-center gap-2 border-2 border-sky-300">
+            <BarChart3 className="w-5 h-5 text-sky-600" />
+            <span className="hidden sm:inline font-bold text-sky-700">Parents</span>
+          </button>
           <button onClick={() => setMusicEnabled(!musicEnabled)} className="p-2 bg-sky-100 hover:bg-sky-200 rounded-full transition-colors">
             {musicEnabled ? <Volume2 className="w-5 h-5 text-sky-600" /> : <VolumeX className="w-5 h-5 text-sky-600" />}
           </button>
@@ -250,6 +277,7 @@ export default function App() {
         </AnimatePresence>
       </main>
       {showRewards && <RewardsModal totalScore={totalScore} onClose={() => setShowRewards(false)} />}
+      {showDashboard && <ParentDashboard scores={scores} getLevel={getLevel} onClose={() => setShowDashboard(false)} />}
     </div>
   );
 }
@@ -291,6 +319,8 @@ function MathDice({ onWin, level }: { onWin: () => void, level: number, key?: st
     options: [] as number[]
   });
   const [showConfetti, setShowConfetti] = useState(false);
+  const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
 
   const generateQuestion = () => {
     const maxDice = 6 + (level - 1) * 2;
@@ -334,23 +364,36 @@ function MathDice({ onWin, level }: { onWin: () => void, level: number, key?: st
   }, []);
 
   const handleAnswer = (ans: number) => {
+    if (feedback) return;
+    setSelectedAnswer(ans);
     const correctAnswer = state.operation === '+' ? state.dice1 + state.dice2 : state.dice1 - state.dice2;
     if (ans === correctAnswer) {
       playSound('correct');
-      setShowConfetti(true);
-      onWin();
+      setFeedback('correct');
       setTimeout(() => {
-        setShowConfetti(false);
-        generateQuestion();
-      }, 2000);
+        setShowConfetti(true);
+        onWin();
+        setTimeout(() => {
+          setShowConfetti(false);
+          setFeedback(null);
+          setSelectedAnswer(null);
+          generateQuestion();
+        }, 2000);
+      }, 500);
     } else {
       playSound('wrong');
+      setFeedback('wrong');
+      setTimeout(() => {
+        setFeedback(null);
+        setSelectedAnswer(null);
+      }, 500);
     }
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700">Math Time!</h2>
       <div className="flex items-center gap-2 sm:gap-4 text-4xl sm:text-6xl font-bold text-slate-600">
         <Dice value={state.dice1} />
@@ -360,15 +403,25 @@ function MathDice({ onWin, level }: { onWin: () => void, level: number, key?: st
         <span className="text-slate-400">?</span>
       </div>
       <div className="flex gap-4 mt-8">
-        {state.options.map(opt => (
-          <button
-            key={opt}
-            onClick={() => handleAnswer(opt)}
-            className="bg-red-500 text-white text-4xl font-bold w-20 h-20 sm:w-24 sm:h-24 rounded-2xl shadow-lg border-b-8 border-red-700 active:border-b-0 active:translate-y-2 transition-all hover:bg-red-400"
-          >
-            {opt}
-          </button>
-        ))}
+        {state.options.map(opt => {
+          const isSelected = selectedAnswer === opt;
+          const isCorrect = isSelected && feedback === 'correct';
+          const isWrong = isSelected && feedback === 'wrong';
+          
+          return (
+            <motion.button
+              key={opt}
+              onClick={() => handleAnswer(opt)}
+              animate={isWrong ? { x: [-10, 10, -10, 10, 0] } : isCorrect ? { scale: [1, 1.2, 1] } : {}}
+              className={`text-white text-4xl font-bold w-20 h-20 sm:w-24 sm:h-24 rounded-2xl shadow-lg border-b-8 active:border-b-0 active:translate-y-2 transition-all
+                ${isCorrect ? 'bg-green-500 border-green-700' : 
+                  isWrong ? 'bg-red-500 border-red-700' : 
+                  'bg-red-500 border-red-700 hover:bg-red-400'}`}
+            >
+              {opt}
+            </motion.button>
+          );
+        })}
       </div>
     </motion.div>
   );
@@ -402,6 +455,7 @@ function PuzzleRace({ onWin, level }: { onWin: () => void, level: number, key?: 
   });
   const [showConfetti, setShowConfetti] = useState(false);
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'correct' | 'wrong', id: number } | null>(null);
 
   useEffect(() => {
     if (state.isPlaying && state.timeLeft > 0) {
@@ -425,20 +479,27 @@ function PuzzleRace({ onWin, level }: { onWin: () => void, level: number, key?: 
   };
 
   const handleSlotClick = (slotId: number) => {
-    if (selectedPiece !== null) {
+    if (selectedPiece !== null && !feedback) {
       if (selectedPiece === slotId) {
         playSound('correct');
         const nextPlaced = { ...state.placed, [slotId]: selectedPiece };
         setState(s => ({ ...s, placed: nextPlaced }));
-        if (Object.keys(nextPlaced).length === 4) {
-          playSound('win');
-          setShowConfetti(true);
-          setState(s => ({ ...s, isPlaying: false }));
-          onWin();
-        }
+        setFeedback({ type: 'correct', id: slotId });
+        
+        setTimeout(() => {
+          setFeedback(null);
+          if (Object.keys(nextPlaced).length === 4) {
+            playSound('win');
+            setShowConfetti(true);
+            setState(s => ({ ...s, isPlaying: false }));
+            onWin();
+          }
+        }, 500);
         setSelectedPiece(null);
       } else {
         playSound('wrong');
+        setFeedback({ type: 'wrong', id: slotId });
+        setTimeout(() => setFeedback(null), 500);
         setSelectedPiece(null);
       }
     }
@@ -447,6 +508,7 @@ function PuzzleRace({ onWin, level }: { onWin: () => void, level: number, key?: 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-6 mt-4 w-full">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <div className="flex justify-between w-full max-w-md items-center px-4">
         <h2 className="text-3xl font-bold text-slate-700">Puzzle Race</h2>
         <div className={`text-2xl font-bold ${state.timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
@@ -472,20 +534,28 @@ function PuzzleRace({ onWin, level }: { onWin: () => void, level: number, key?: 
       {state.isPlaying && (
         <>
           <div className="grid grid-cols-2 gap-3 bg-slate-200 p-3 rounded-2xl w-64 h-64 sm:w-72 sm:h-72 shadow-inner">
-            {[1, 2, 3, 4].map(slot => (
-              <div
-                key={slot}
-                onClick={() => handleSlotClick(slot)}
-                className={`border-4 border-dashed rounded-xl flex items-center justify-center transition-colors
-                  ${selectedPiece !== null ? 'border-blue-400 bg-blue-50 cursor-pointer' : 'border-slate-300 bg-slate-100'}`}
-              >
-                {state.placed[slot] ? (
-                  <PuzzlePiece id={slot} />
-                ) : (
-                  <span className="text-slate-300 text-5xl font-bold opacity-50">{slot}</span>
-                )}
-              </div>
-            ))}
+            {[1, 2, 3, 4].map(slot => {
+              const isCorrect = feedback?.id === slot && feedback.type === 'correct';
+              const isWrong = feedback?.id === slot && feedback.type === 'wrong';
+              
+              return (
+                <motion.div
+                  key={slot}
+                  onClick={() => handleSlotClick(slot)}
+                  animate={isWrong ? { x: [-5, 5, -5, 5, 0] } : isCorrect ? { scale: [1, 1.1, 1] } : {}}
+                  className={`border-4 border-dashed rounded-xl flex items-center justify-center transition-colors
+                    ${isCorrect ? 'border-green-400 bg-green-50' :
+                      isWrong ? 'border-red-400 bg-red-50' :
+                      selectedPiece !== null ? 'border-blue-400 bg-blue-50 cursor-pointer' : 'border-slate-300 bg-slate-100'}`}
+                >
+                  {state.placed[slot] ? (
+                    <PuzzlePiece id={slot} />
+                  ) : (
+                    <span className="text-slate-300 text-5xl font-bold opacity-50">{slot}</span>
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
 
           <div className="flex gap-3 sm:gap-4 mt-4">
@@ -541,6 +611,7 @@ function AlphabetMatch({ onWin, level }: { onWin: () => void, level: number, key
   });
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'correct' | 'wrong', id: string } | null>(null);
 
   const startRound = () => {
     const currentPairCount = Math.min(6, 3 + Math.floor(level / 2));
@@ -571,27 +642,36 @@ function AlphabetMatch({ onWin, level }: { onWin: () => void, level: number, key
   }, []);
 
   const handlePicClick = (letter: string) => {
-    if (!selectedLetter) return;
+    if (!selectedLetter || feedback) return;
     if (selectedLetter === letter) {
       playSound('correct');
-      const nextMatched = [...state.matched, letter];
-      setState(s => ({ ...s, matched: nextMatched }));
-      if (nextMatched.length === state.pairCount) {
-        playSound('win');
-        setShowConfetti(true);
-        onWin();
-        setTimeout(startRound, 3000);
-      }
-      setSelectedLetter(null);
+      setFeedback({ type: 'correct', id: letter });
+      setTimeout(() => {
+        const nextMatched = [...state.matched, letter];
+        setState(s => ({ ...s, matched: nextMatched }));
+        setFeedback(null);
+        if (nextMatched.length === state.pairCount) {
+          playSound('win');
+          setShowConfetti(true);
+          onWin();
+          setTimeout(startRound, 3000);
+        }
+        setSelectedLetter(null);
+      }, 500);
     } else {
       playSound('wrong');
-      setSelectedLetter(null);
+      setFeedback({ type: 'wrong', id: letter });
+      setTimeout(() => {
+        setFeedback(null);
+        setSelectedLetter(null);
+      }, 500);
     }
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700 text-center">Match Letter to Picture!</h2>
       
       <div className="flex justify-between w-full max-w-md gap-4 px-4">
@@ -620,18 +700,23 @@ function AlphabetMatch({ onWin, level }: { onWin: () => void, level: number, key
         <div className="flex flex-col gap-4 flex-1">
           {state.pics.map(item => {
             const isMatched = state.matched.includes(item.letter);
+            const isCorrect = feedback?.id === item.letter && feedback.type === 'correct';
+            const isWrong = feedback?.id === item.letter && feedback.type === 'wrong';
+            
             return (
-              <button
+              <motion.button
                 key={`p-${item.letter}`}
                 disabled={isMatched}
                 onClick={() => handlePicClick(item.letter)}
+                animate={isWrong ? { x: [-5, 5, -5, 5, 0] } : isCorrect ? { scale: [1, 1.1, 1] } : {}}
                 className={`h-20 rounded-2xl text-5xl transition-all border-b-4 active:border-b-0 active:translate-y-1 flex items-center justify-center
-                  ${isMatched ? 'bg-green-200 border-green-300 opacity-50' : 
+                  ${isMatched || isCorrect ? 'bg-green-200 border-green-300 opacity-50' : 
+                    isWrong ? 'bg-red-200 border-red-300' :
                     selectedLetter ? 'bg-white border-slate-300 shadow-md hover:bg-blue-50 ring-2 ring-blue-200 cursor-pointer' : 
                     'bg-white border-slate-300 shadow-md opacity-80 cursor-default'}`}
               >
                 {item.pic}
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -649,6 +734,7 @@ function MemoryMatch({ onWin, level }: { onWin: () => void, level: number, key?:
     isPeeking: false
   });
   const [showConfetti, setShowConfetti] = useState(false);
+  const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
 
   const startRound = () => {
     const pairCount = Math.min(6, 3 + Math.floor(level / 2));
@@ -702,9 +788,11 @@ function MemoryMatch({ onWin, level }: { onWin: () => void, level: number, key?:
 
       if (c1?.emoji === c2?.emoji) {
         playSound('correct');
+        setFeedback('correct');
         const nextCards = updatedCards.map(c => c.id === id1 || c.id === id2 ? { ...c, isMatched: true } : c);
         setTimeout(() => {
           setState(s => ({ ...s, cards: nextCards, flippedIds: [] }));
+          setFeedback(null);
           if (nextCards.every(c => c.isMatched)) {
             playSound('win');
             setShowConfetti(true);
@@ -714,7 +802,9 @@ function MemoryMatch({ onWin, level }: { onWin: () => void, level: number, key?:
         }, 500);
       } else {
         playSound('wrong');
+        setFeedback('wrong');
         setTimeout(() => {
+          setFeedback(null);
           setState(s => ({
             ...s,
             cards: s.cards.map(c => c.id === id1 || c.id === id2 ? { ...c, isFlipped: false } : c),
@@ -728,22 +818,31 @@ function MemoryMatch({ onWin, level }: { onWin: () => void, level: number, key?:
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-6 mt-4">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700">Memory Match</h2>
       
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4">
-        {state.cards.map(card => (
-          <button
-            key={card.id}
-            onClick={() => handleCardClick(card.id)}
-            className={`w-20 h-24 sm:w-24 sm:h-32 rounded-xl text-4xl sm:text-5xl flex items-center justify-center shadow-md transition-all duration-300 transform preserve-3d
-              ${card.isFlipped || card.isMatched ? 'bg-white rotate-y-180' : 'bg-purple-500 hover:bg-purple-400 border-b-4 border-purple-700 active:border-b-0 active:translate-y-1'}`}
-            style={{ perspective: '1000px' }}
-          >
-            <div className={`transition-opacity duration-300 ${card.isFlipped || card.isMatched ? 'opacity-100' : 'opacity-0'}`}>
-              {card.emoji}
-            </div>
-          </button>
-        ))}
+        {state.cards.map(card => {
+          const isJustFlipped = state.flippedIds.includes(card.id);
+          const isCorrect = isJustFlipped && feedback === 'correct';
+          const isWrong = isJustFlipped && feedback === 'wrong';
+          
+          return (
+            <motion.button
+              key={card.id}
+              onClick={() => handleCardClick(card.id)}
+              animate={isWrong ? { x: [-5, 5, -5, 5, 0] } : isCorrect ? { scale: [1, 1.1, 1] } : {}}
+              className={`w-20 h-24 sm:w-24 sm:h-32 rounded-xl text-4xl sm:text-5xl flex items-center justify-center shadow-md transition-all duration-300 transform preserve-3d
+                ${card.isFlipped || card.isMatched ? 'bg-white rotate-y-180' : 'bg-purple-500 hover:bg-purple-400 border-b-4 border-purple-700 active:border-b-0 active:translate-y-1'}
+                ${isCorrect ? 'ring-4 ring-green-400' : isWrong ? 'ring-4 ring-red-400' : ''}`}
+              style={{ perspective: '1000px' }}
+            >
+              <div className={`transition-opacity duration-300 ${card.isFlipped || card.isMatched ? 'opacity-100' : 'opacity-0'}`}>
+                {card.emoji}
+              </div>
+            </motion.button>
+          );
+        })}
       </div>
     </motion.div>
   );
@@ -758,6 +857,8 @@ function CountingGame({ onWin, level }: { onWin: () => void, level: number, key?
     options: [] as number[]
   });
   const [showConfetti, setShowConfetti] = useState(false);
+  const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
 
   const generateQuestion = () => {
     const maxCount = 5 + level * 2;
@@ -784,22 +885,35 @@ function CountingGame({ onWin, level }: { onWin: () => void, level: number, key?
   }, []);
 
   const handleAnswer = (ans: number) => {
+    if (feedback) return;
+    setSelectedAnswer(ans);
     if (ans === state.count) {
       playSound('correct');
-      setShowConfetti(true);
-      onWin();
+      setFeedback('correct');
       setTimeout(() => {
-        setShowConfetti(false);
-        generateQuestion();
-      }, 2000);
+        setShowConfetti(true);
+        onWin();
+        setTimeout(() => {
+          setShowConfetti(false);
+          setFeedback(null);
+          setSelectedAnswer(null);
+          generateQuestion();
+        }, 2000);
+      }, 500);
     } else {
       playSound('wrong');
+      setFeedback('wrong');
+      setTimeout(() => {
+        setFeedback(null);
+        setSelectedAnswer(null);
+      }, 500);
     }
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700">How many?</h2>
       
       <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-inner border-4 border-orange-200 min-h-[200px] w-full max-w-lg flex flex-wrap justify-center items-center gap-2 sm:gap-4">
@@ -817,15 +931,25 @@ function CountingGame({ onWin, level }: { onWin: () => void, level: number, key?
       </div>
 
       <div className="flex gap-4 sm:gap-6 mt-4">
-        {state.options.map(opt => (
-          <button
-            key={opt}
-            onClick={() => handleAnswer(opt)}
-            className="bg-orange-500 text-white text-4xl font-bold w-20 h-20 sm:w-24 sm:h-24 rounded-2xl shadow-lg border-b-8 border-orange-700 active:border-b-0 active:translate-y-2 transition-all hover:bg-orange-400"
-          >
-            {opt}
-          </button>
-        ))}
+        {state.options.map(opt => {
+          const isSelected = selectedAnswer === opt;
+          const isCorrect = isSelected && feedback === 'correct';
+          const isWrong = isSelected && feedback === 'wrong';
+          
+          return (
+            <motion.button
+              key={opt}
+              onClick={() => handleAnswer(opt)}
+              animate={isWrong ? { x: [-10, 10, -10, 10, 0] } : isCorrect ? { scale: [1, 1.2, 1] } : {}}
+              className={`text-white text-4xl font-bold w-20 h-20 sm:w-24 sm:h-24 rounded-2xl shadow-lg border-b-8 active:border-b-0 active:translate-y-2 transition-all
+                ${isCorrect ? 'bg-green-500 border-green-700' : 
+                  isWrong ? 'bg-red-500 border-red-700' : 
+                  'bg-orange-500 border-orange-700 hover:bg-orange-400'}`}
+            >
+              {opt}
+            </motion.button>
+          );
+        })}
       </div>
     </motion.div>
   );
@@ -866,6 +990,89 @@ function RewardsModal({ totalScore, onClose }: { totalScore: number, onClose: ()
   );
 }
 
+function ParentDashboard({ scores, getLevel, onClose }: { scores: Record<string, number>, getLevel: (id: string) => number, onClose: () => void }) {
+  const games = [
+    { id: 'math', name: 'Math Dice', icon: '🎲', color: 'text-red-500', bg: 'bg-red-100' },
+    { id: 'puzzle', name: 'Puzzle Race', icon: '🧩', color: 'text-blue-500', bg: 'bg-blue-100' },
+    { id: 'alphabet', name: 'Alphabet Match', icon: '🔤', color: 'text-green-500', bg: 'bg-green-100' },
+    { id: 'memory', name: 'Memory Match', icon: '🃏', color: 'text-purple-500', bg: 'bg-purple-100' },
+    { id: 'counting', name: 'Counting Game', icon: '🔢', color: 'text-orange-500', bg: 'bg-orange-100' },
+    { id: 'colors', name: 'Color Catch', icon: '🎨', color: 'text-pink-500', bg: 'bg-pink-100' },
+    { id: 'shapes', name: 'Shape Sorter', icon: '🔺', color: 'text-teal-500', bg: 'bg-teal-100' },
+    { id: 'words', name: 'Word Builder', icon: '📝', color: 'text-indigo-500', bg: 'bg-indigo-100' }
+  ];
+
+  const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex justify-between items-center mb-6 border-b pb-4">
+          <div>
+            <h2 className="text-3xl font-bold text-slate-800 flex items-center gap-2">
+              <BarChart3 className="w-8 h-8 text-sky-500" />
+              Parent Dashboard
+            </h2>
+            <p className="text-slate-500 mt-1">Track your child's learning progress</p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-800 text-3xl font-bold">&times;</button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto pr-2">
+          <div className="bg-sky-50 rounded-2xl p-6 mb-6 flex items-center justify-between border-2 border-sky-100">
+            <div>
+              <h3 className="text-lg font-semibold text-sky-800">Total Stars Earned</h3>
+              <p className="text-sm text-sky-600">Across all learning games</p>
+            </div>
+            <div className="text-4xl font-black text-yellow-500 flex items-center gap-2">
+              <Star className="w-8 h-8 fill-yellow-500" />
+              {totalScore}
+            </div>
+          </div>
+
+          <h3 className="text-xl font-bold text-slate-700 mb-4">Game Progress</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {games.map(game => {
+              const score = scores[game.id] || 0;
+              const level = getLevel(game.id);
+              const progressToNextLevel = (score % 5) / 5 * 100;
+              
+              return (
+                <div key={game.id} className={`p-4 rounded-2xl border-2 border-slate-100 ${game.bg} bg-opacity-30`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-3xl">{game.icon}</span>
+                    <div className="flex-1">
+                      <h4 className={`font-bold ${game.color}`}>{game.name}</h4>
+                      <div className="text-sm text-slate-600 font-medium">Level {level}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-slate-700 flex items-center gap-1">
+                        <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                        {score}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-white rounded-full h-2.5 mb-1 overflow-hidden">
+                    <div 
+                      className={`h-2.5 rounded-full ${game.color.replace('text-', 'bg-')}`} 
+                      style={{ width: `${progressToNextLevel}%` }}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-slate-500 text-right">
+                    {5 - (score % 5)} stars to Level {level + 1}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // --- New Games ---
 
 const COLORS = [
@@ -885,6 +1092,8 @@ function ColorCatch({ onWin, level }: { onWin: () => void, level: number, key?: 
     options: [] as typeof COLORS
   });
   const [showConfetti, setShowConfetti] = useState(false);
+  const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
   const generateQuestion = () => {
     const numOptions = Math.min(8, 3 + Math.floor(level / 2));
@@ -904,35 +1113,58 @@ function ColorCatch({ onWin, level }: { onWin: () => void, level: number, key?: 
   }, []);
 
   const handleAnswer = (color: typeof COLORS[0]) => {
+    if (feedback) return;
+    setSelectedAnswer(color.name);
     if (color.name === state.targetColor.name) {
       playSound('correct');
-      setShowConfetti(true);
-      onWin();
+      setFeedback('correct');
       setTimeout(() => {
-        setShowConfetti(false);
-        generateQuestion();
-      }, 2000);
+        setShowConfetti(true);
+        onWin();
+        setTimeout(() => {
+          setShowConfetti(false);
+          setFeedback(null);
+          setSelectedAnswer(null);
+          generateQuestion();
+        }, 2000);
+      }, 500);
     } else {
       playSound('wrong');
+      setFeedback('wrong');
+      setTimeout(() => {
+        setFeedback(null);
+        setSelectedAnswer(null);
+      }, 500);
     }
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700">Find the color:</h2>
       <div className="text-5xl sm:text-6xl font-black text-slate-700">
         {state.targetColor.name}
       </div>
       <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-4 max-w-lg">
-        {state.options.map(opt => (
-          <button
-            key={opt.name}
-            onClick={() => handleAnswer(opt)}
-            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full shadow-lg border-4 border-white active:scale-95 transition-transform hover:scale-105"
-            style={{ backgroundColor: opt.hex }}
-          />
-        ))}
+        {state.options.map(opt => {
+          const isSelected = selectedAnswer === opt.name;
+          const isCorrect = isSelected && feedback === 'correct';
+          const isWrong = isSelected && feedback === 'wrong';
+          
+          return (
+            <motion.button
+              key={opt.name}
+              onClick={() => handleAnswer(opt)}
+              animate={isWrong ? { x: [-10, 10, -10, 10, 0] } : isCorrect ? { scale: [1, 1.2, 1] } : {}}
+              className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full shadow-lg border-4 active:scale-95 transition-transform hover:scale-105
+                ${isCorrect ? 'border-green-500 ring-4 ring-green-300' : 
+                  isWrong ? 'border-red-500 ring-4 ring-red-300' : 
+                  'border-white'}`}
+              style={{ backgroundColor: opt.hex }}
+            />
+          );
+        })}
       </div>
     </motion.div>
   );
@@ -953,6 +1185,8 @@ function ShapeSorter({ onWin, level }: { onWin: () => void, level: number, key?:
     options: [] as typeof SHAPE_EMOJIS
   });
   const [showConfetti, setShowConfetti] = useState(false);
+  const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
   const generateQuestion = () => {
     const numOptions = Math.min(6, 3 + Math.floor(level / 2));
@@ -972,36 +1206,59 @@ function ShapeSorter({ onWin, level }: { onWin: () => void, level: number, key?:
   }, []);
 
   const handleAnswer = (shape: typeof SHAPE_EMOJIS[0]) => {
+    if (feedback) return;
+    setSelectedAnswer(shape.name);
     if (shape.name === state.targetShape.name) {
       playSound('correct');
-      setShowConfetti(true);
-      onWin();
+      setFeedback('correct');
       setTimeout(() => {
-        setShowConfetti(false);
-        generateQuestion();
-      }, 2000);
+        setShowConfetti(true);
+        onWin();
+        setTimeout(() => {
+          setShowConfetti(false);
+          setFeedback(null);
+          setSelectedAnswer(null);
+          generateQuestion();
+        }, 2000);
+      }, 500);
     } else {
       playSound('wrong');
+      setFeedback('wrong');
+      setTimeout(() => {
+        setFeedback(null);
+        setSelectedAnswer(null);
+      }, 500);
     }
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700">Find the:</h2>
       <div className="text-5xl sm:text-6xl font-black text-teal-600">
         {state.targetShape.name}
       </div>
       <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-4 max-w-lg">
-        {state.options.map(opt => (
-          <button
-            key={opt.name}
-            onClick={() => handleAnswer(opt)}
-            className="w-24 h-24 sm:w-32 sm:h-32 bg-white rounded-2xl shadow-lg border-b-8 border-slate-200 active:border-b-0 active:translate-y-2 transition-all flex items-center justify-center text-6xl sm:text-7xl hover:bg-slate-50"
-          >
-            {opt.emoji}
-          </button>
-        ))}
+        {state.options.map(opt => {
+          const isSelected = selectedAnswer === opt.name;
+          const isCorrect = isSelected && feedback === 'correct';
+          const isWrong = isSelected && feedback === 'wrong';
+          
+          return (
+            <motion.button
+              key={opt.name}
+              onClick={() => handleAnswer(opt)}
+              animate={isWrong ? { x: [-10, 10, -10, 10, 0] } : isCorrect ? { scale: [1, 1.2, 1] } : {}}
+              className={`w-24 h-24 sm:w-32 sm:h-32 rounded-2xl shadow-lg border-b-8 active:border-b-0 active:translate-y-2 transition-all flex items-center justify-center text-6xl sm:text-7xl
+                ${isCorrect ? 'bg-green-100 border-green-300 ring-4 ring-green-400' : 
+                  isWrong ? 'bg-red-100 border-red-300 ring-4 ring-red-400' : 
+                  'bg-white border-slate-200 hover:bg-slate-50'}`}
+            >
+              {opt.emoji}
+            </motion.button>
+          );
+        })}
       </div>
     </motion.div>
   );
@@ -1037,6 +1294,7 @@ function WordBuilder({ onWin, level }: { onWin: () => void, level: number, key?:
     letters: [] as {char: string, id: number}[]
   });
   const [showConfetti, setShowConfetti] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'correct' | 'wrong', id: number } | null>(null);
 
   const generateQuestion = () => {
     // Filter words based on level (longer words at higher levels)
@@ -1067,34 +1325,43 @@ function WordBuilder({ onWin, level }: { onWin: () => void, level: number, key?:
   }, []);
 
   const handleLetterClick = (letterObj: {char: string, id: number}) => {
+    if (feedback) return;
     const expectedChar = state.target.word[state.spelled.length];
     if (letterObj.char === expectedChar) {
       playSound('correct');
-      const newSpelled = [...state.spelled, letterObj.char];
+      setFeedback({ type: 'correct', id: letterObj.id });
       
-      setState(s => ({
-        ...s,
-        spelled: newSpelled,
-        letters: s.letters.filter(l => l.id !== letterObj.id)
-      }));
+      setTimeout(() => {
+        const newSpelled = [...state.spelled, letterObj.char];
+        
+        setState(s => ({
+          ...s,
+          spelled: newSpelled,
+          letters: s.letters.filter(l => l.id !== letterObj.id)
+        }));
+        setFeedback(null);
 
-      if (newSpelled.length === state.target.word.length) {
-        playSound('win');
-        setShowConfetti(true);
-        onWin();
-        setTimeout(() => {
-          setShowConfetti(false);
-          generateQuestion();
-        }, 2000);
-      }
+        if (newSpelled.length === state.target.word.length) {
+          playSound('win');
+          setShowConfetti(true);
+          onWin();
+          setTimeout(() => {
+            setShowConfetti(false);
+            generateQuestion();
+          }, 2000);
+        }
+      }, 500);
     } else {
       playSound('wrong');
+      setFeedback({ type: 'wrong', id: letterObj.id });
+      setTimeout(() => setFeedback(null), 500);
     }
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
       {showConfetti && <Confetti />}
+      <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700">Spell the word!</h2>
       <div className="text-8xl">{state.target.emoji}</div>
       
@@ -1109,15 +1376,24 @@ function WordBuilder({ onWin, level }: { onWin: () => void, level: number, key?:
 
       {/* Available letters */}
       <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mt-8 max-w-lg">
-        {state.letters.map(l => (
-          <button
-            key={l.id}
-            onClick={() => handleLetterClick(l)}
-            className="w-16 h-16 sm:w-20 sm:h-20 bg-indigo-500 text-white rounded-2xl shadow-lg border-b-8 border-indigo-700 active:border-b-0 active:translate-y-2 transition-all flex items-center justify-center text-4xl sm:text-5xl font-bold uppercase hover:bg-indigo-400"
-          >
-            {l.char}
-          </button>
-        ))}
+        {state.letters.map(l => {
+          const isCorrect = feedback?.id === l.id && feedback.type === 'correct';
+          const isWrong = feedback?.id === l.id && feedback.type === 'wrong';
+          
+          return (
+            <motion.button
+              key={l.id}
+              onClick={() => handleLetterClick(l)}
+              animate={isWrong ? { x: [-10, 10, -10, 10, 0] } : isCorrect ? { scale: [1, 1.2, 1] } : {}}
+              className={`w-16 h-16 sm:w-20 sm:h-20 text-white rounded-2xl shadow-lg border-b-8 active:border-b-0 active:translate-y-2 transition-all flex items-center justify-center text-4xl sm:text-5xl font-bold uppercase
+                ${isCorrect ? 'bg-green-500 border-green-700' : 
+                  isWrong ? 'bg-red-500 border-red-700' : 
+                  'bg-indigo-500 border-indigo-700 hover:bg-indigo-400'}`}
+            >
+              {l.char}
+            </motion.button>
+          );
+        })}
       </div>
     </motion.div>
   );
