@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar, BarChart3, CheckCircle, Medal, X } from 'lucide-react';
+import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar, BarChart3, CheckCircle, Medal, X, Info } from 'lucide-react';
 
 // --- Audio Utility ---
 let audioCtx: AudioContext | null = null;
@@ -151,6 +151,78 @@ function useGameState<T>(key: string, initialValue: T): [T, React.Dispatch<React
   return [state, setState];
 }
 
+const GAME_RULES: Record<string, { title: string, rules: string[] }> = {
+  math: {
+    title: 'Math Dice',
+    rules: [
+      'Look at the numbers on the dice.',
+      'Add or subtract them depending on the sign (+ or -).',
+      'Tap the correct answer from the options below!',
+      'As you level up, the numbers get bigger and subtraction is introduced.'
+    ]
+  },
+  puzzle: {
+    title: 'Puzzle Race',
+    rules: [
+      'Tap a puzzle piece at the bottom to select it.',
+      'Then tap the matching number slot on the board to place it.',
+      'Place all pieces before the timer runs out!',
+      'As you level up, you have less time to complete the puzzle.'
+    ]
+  },
+  alphabet: {
+    title: 'Alphabet Match',
+    rules: [
+      'Look at the letters on the left and the pictures on the right.',
+      'Tap a letter, then tap the picture that starts with that letter.',
+      'Match all the pairs to win!',
+      'As you level up, you will see lowercase letters and more pairs.'
+    ]
+  },
+  memory: {
+    title: 'Memory Match',
+    rules: [
+      'Tap a card to flip it over and see the picture.',
+      'Try to remember where the pictures are.',
+      'Find and tap two matching pictures to clear them.',
+      'Clear all the cards to win!',
+      'As you level up, there will be more cards to match.'
+    ]
+  },
+  counting: {
+    title: 'Counting Game',
+    rules: [
+      'Count how many items you see on the screen.',
+      'Tap the correct number from the options below!',
+      'As you level up, there will be more items to count.'
+    ]
+  },
+  colors: {
+    title: 'Color Catch',
+    rules: [
+      'Read the name of the color at the top.',
+      'Tap the circle that matches that color!',
+      'As you level up, the colors will move around to trick you!'
+    ]
+  },
+  shapes: {
+    title: 'Shape Sorter',
+    rules: [
+      'Read the name of the shape (and color) at the top.',
+      'Tap the shape that matches!',
+      'As you level up, you will need to match both the shape and the color, and the shapes will move around!'
+    ]
+  },
+  words: {
+    title: 'Word Builder',
+    rules: [
+      'Look at the picture and the empty boxes.',
+      'Tap the letters in the correct order to spell the word!',
+      'As you level up, the words will get longer and there will be extra letters to trick you.'
+    ]
+  }
+};
+
 // --- Main App Component ---
 export default function App() {
   const [currentGame, setCurrentGame] = useState<string | null>(null);
@@ -158,6 +230,7 @@ export default function App() {
   const [showRewards, setShowRewards] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [scores, setScores] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('kids-learning-scores');
@@ -241,6 +314,12 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          {currentGame && (
+            <button onClick={() => setShowRules(true)} className="p-2 bg-sky-100 hover:bg-sky-200 rounded-full transition-colors flex items-center gap-2 border-2 border-sky-300">
+              <Info className="w-5 h-5 text-sky-600" />
+              <span className="hidden sm:inline font-bold text-sky-700">How to Play</span>
+            </button>
+          )}
           <button onClick={() => setShowLeaderboard(true)} className="p-2 bg-sky-100 hover:bg-sky-200 rounded-full transition-colors flex items-center gap-2 border-2 border-sky-300">
             <Medal className="w-5 h-5 text-sky-600" />
             <span className="hidden sm:inline font-bold text-sky-700">Leaderboard</span>
@@ -312,6 +391,33 @@ export default function App() {
       {showRewards && <RewardsModal totalScore={totalScore} onClose={() => setShowRewards(false)} />}
       {showDashboard && <ParentDashboard scores={scores} getLevel={getLevel} onClose={() => setShowDashboard(false)} />}
       {showLeaderboard && <LeaderboardModal scores={scores} onClose={() => setShowLeaderboard(false)} />}
+      {showRules && currentGame && GAME_RULES[currentGame] && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-3xl font-bold text-sky-600 flex items-center gap-2">
+                <Info className="w-8 h-8 text-sky-500" />
+                How to Play
+              </h2>
+              <button onClick={() => setShowRules(false)} className="text-slate-500 hover:text-slate-800 text-3xl font-bold">&times;</button>
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-xl font-bold text-slate-800">{GAME_RULES[currentGame].title}</h3>
+              <ul className="space-y-3">
+                {GAME_RULES[currentGame].rules.map((rule, idx) => (
+                  <li key={idx} className="flex items-start gap-3 text-slate-600">
+                    <CheckCircle className="w-6 h-6 text-green-500 shrink-0" />
+                    <span className="text-lg">{rule}</span>
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => setShowRules(false)} className="w-full mt-6 bg-sky-500 text-white px-6 py-3 rounded-full text-xl font-bold shadow-lg border-b-4 border-sky-700 active:border-b-0 active:translate-y-1">
+                Got it!
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
