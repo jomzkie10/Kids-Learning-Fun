@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar, BarChart3, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Star, Trophy, Volume2, VolumeX, Gift, Calendar, BarChart3, CheckCircle, Medal, X } from 'lucide-react';
 
 // --- Audio Utility ---
 let audioCtx: AudioContext | null = null;
@@ -157,6 +157,7 @@ export default function App() {
   const [musicEnabled, setMusicEnabled] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [scores, setScores] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('kids-learning-scores');
@@ -240,6 +241,10 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          <button onClick={() => setShowLeaderboard(true)} className="p-2 bg-sky-100 hover:bg-sky-200 rounded-full transition-colors flex items-center gap-2 border-2 border-sky-300">
+            <Medal className="w-5 h-5 text-sky-600" />
+            <span className="hidden sm:inline font-bold text-sky-700">Leaderboard</span>
+          </button>
           <button onClick={() => setShowDashboard(true)} className="p-2 bg-sky-100 hover:bg-sky-200 rounded-full transition-colors flex items-center gap-2 border-2 border-sky-300">
             <BarChart3 className="w-5 h-5 text-sky-600" />
             <span className="hidden sm:inline font-bold text-sky-700">Parents</span>
@@ -306,6 +311,105 @@ export default function App() {
       </main>
       {showRewards && <RewardsModal totalScore={totalScore} onClose={() => setShowRewards(false)} />}
       {showDashboard && <ParentDashboard scores={scores} getLevel={getLevel} onClose={() => setShowDashboard(false)} />}
+      {showLeaderboard && <LeaderboardModal scores={scores} onClose={() => setShowLeaderboard(false)} />}
+    </div>
+  );
+}
+
+function LeaderboardModal({ scores, onClose }: { scores: Record<string, number>, onClose: () => void }) {
+  const [selectedGame, setSelectedGame] = useState<string>('math');
+  const gameIds = ['math', 'puzzle', 'alphabet', 'memory', 'counting', 'colors', 'shapes', 'words'];
+  const gameNames: Record<string, string> = {
+    math: 'Math Dice',
+    puzzle: 'Puzzle Race',
+    alphabet: 'Alphabet Match',
+    memory: 'Memory Cards',
+    counting: 'Counting Stars',
+    colors: 'Color Catch',
+    shapes: 'Shape Sorter',
+    words: 'Word Builder',
+  };
+
+  const getMockLeaderboard = (gameId: string) => {
+    const baseScore = gameId.length * 10;
+    return [
+      { name: 'Alex', score: baseScore + 45, isUser: false },
+      { name: 'Sam', score: baseScore + 30, isUser: false },
+      { name: 'Jordan', score: baseScore + 20, isUser: false },
+      { name: 'Taylor', score: baseScore + 10, isUser: false },
+      { name: 'Casey', score: baseScore + 5, isUser: false },
+    ];
+  };
+
+  const currentLeaderboard = getMockLeaderboard(selectedGame);
+  const userScore = scores[selectedGame] || 0;
+  
+  const combined = [...currentLeaderboard, { name: 'You', score: userScore, isUser: true }];
+  combined.sort((a, b) => b.score - a.score);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-bold text-sky-600 flex items-center gap-2">
+            <Medal className="w-8 h-8 text-yellow-500" />
+            Leaderboards
+          </h2>
+          <button onClick={onClose} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors">
+            <X className="w-6 h-6 text-slate-600" />
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-6">
+          {gameIds.map(id => (
+            <button
+              key={id}
+              onClick={() => setSelectedGame(id)}
+              className={`px-4 py-2 rounded-full font-bold text-sm transition-colors ${
+                selectedGame === id ? 'bg-sky-500 text-white' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'
+              }`}
+            >
+              {gameNames[id]}
+            </button>
+          ))}
+        </div>
+
+        <div className="bg-slate-50 rounded-2xl p-4 border-2 border-slate-100">
+          <h3 className="text-xl font-bold text-slate-700 mb-4 text-center">{gameNames[selectedGame]} Top Scores</h3>
+          <div className="space-y-3">
+            {combined.map((entry, index) => (
+              <div
+                key={index}
+                className={`flex items-center justify-between p-4 rounded-xl ${
+                  entry.isUser ? 'bg-yellow-100 border-2 border-yellow-300' : 'bg-white border border-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                    index === 0 ? 'bg-yellow-400 text-white' :
+                    index === 1 ? 'bg-slate-300 text-white' :
+                    index === 2 ? 'bg-amber-600 text-white' :
+                    'bg-slate-100 text-slate-500'
+                  }`}>
+                    {index + 1}
+                  </div>
+                  <span className={`font-bold ${entry.isUser ? 'text-yellow-700' : 'text-slate-700'}`}>
+                    {entry.name}
+                  </span>
+                </div>
+                <div className="font-bold text-sky-600 text-lg">
+                  {entry.score} pts
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -1199,31 +1303,67 @@ function ColorCatch({ onWin, level }: { onWin: () => void, level: number, key?: 
 }
 
 const SHAPE_EMOJIS = [
-  { name: 'Circle', emoji: '🔴' },
-  { name: 'Square', emoji: '🟦' },
-  { name: 'Triangle', emoji: '🔺' },
-  { name: 'Star', emoji: '⭐' },
-  { name: 'Heart', emoji: '❤️' },
-  { name: 'Diamond', emoji: '♦️' },
+  { name: 'Red Circle', emoji: '🔴', base: 'Circle', color: 'Red', difficulty: 1 },
+  { name: 'Blue Square', emoji: '🟦', base: 'Square', color: 'Blue', difficulty: 1 },
+  { name: 'Red Triangle', emoji: '🔺', base: 'Triangle', color: 'Red', difficulty: 1 },
+  { name: 'Yellow Star', emoji: '⭐', base: 'Star', color: 'Yellow', difficulty: 1 },
+  { name: 'Red Heart', emoji: '❤️', base: 'Heart', color: 'Red', difficulty: 1 },
+  { name: 'Red Diamond', emoji: '♦️', base: 'Diamond', color: 'Red', difficulty: 1 },
+  { name: 'Yellow Circle', emoji: '🟡', base: 'Circle', color: 'Yellow', difficulty: 2 },
+  { name: 'Green Square', emoji: '🟩', base: 'Square', color: 'Green', difficulty: 2 },
+  { name: 'Purple Circle', emoji: '🟣', base: 'Circle', color: 'Purple', difficulty: 2 },
+  { name: 'Orange Diamond', emoji: '🔶', base: 'Diamond', color: 'Orange', difficulty: 2 },
+  { name: 'Blue Diamond', emoji: '🔷', base: 'Diamond', color: 'Blue', difficulty: 2 },
+  { name: 'White Circle', emoji: '⚪', base: 'Circle', color: 'White', difficulty: 3 },
+  { name: 'Black Square', emoji: '⬛', base: 'Square', color: 'Black', difficulty: 3 },
+  { name: 'Brown Circle', emoji: '🟤', base: 'Circle', color: 'Brown', difficulty: 3 },
+  { name: 'Orange Square', emoji: '🟧', base: 'Square', color: 'Orange', difficulty: 3 },
+  { name: 'Yellow Square', emoji: '🟨', base: 'Square', color: 'Yellow', difficulty: 3 },
+  { name: 'Purple Square', emoji: '🟪', base: 'Square', color: 'Purple', difficulty: 3 },
 ];
 
 function ShapeSorter({ onWin, level }: { onWin: () => void, level: number, key?: string }) {
-  const [state, setState] = useGameState('shapes', {
+  const [state, setState] = useGameState('shapes-v2', {
     targetShape: SHAPE_EMOJIS[0],
-    options: [] as typeof SHAPE_EMOJIS
+    options: [] as typeof SHAPE_EMOJIS,
+    askForColor: false
   });
   const [showConfetti, setShowConfetti] = useState(false);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
   const generateQuestion = () => {
-    const numOptions = Math.min(6, 3 + Math.floor(level / 2));
-    const shuffled = [...SHAPE_EMOJIS].sort(() => Math.random() - 0.5);
-    const selectedOptions = shuffled.slice(0, numOptions);
+    const numOptions = Math.min(12, 3 + Math.floor(level / 2));
+    const askForColor = level >= 3;
+    const maxDifficulty = Math.max(1, Math.ceil(level / 2));
+    
+    const availableShapes = SHAPE_EMOJIS.filter(s => s.difficulty <= maxDifficulty);
+    const shuffled = [...availableShapes].sort(() => Math.random() - 0.5);
+    
+    let selectedOptions: typeof SHAPE_EMOJIS = [];
+    
+    if (!askForColor) {
+      const seenBases = new Set();
+      for (const shape of shuffled) {
+        if (!seenBases.has(shape.base)) {
+          seenBases.add(shape.base);
+          selectedOptions.push(shape);
+        }
+        if (selectedOptions.length === numOptions) break;
+      }
+      if (selectedOptions.length < numOptions) {
+        selectedOptions = shuffled.slice(0, numOptions);
+      }
+    } else {
+      selectedOptions = shuffled.slice(0, numOptions);
+    }
+    
     const target = selectedOptions[Math.floor(Math.random() * selectedOptions.length)];
+    
     setState({
       targetShape: target,
-      options: selectedOptions
+      options: selectedOptions,
+      askForColor
     });
   };
 
@@ -1259,25 +1399,59 @@ function ShapeSorter({ onWin, level }: { onWin: () => void, level: number, key?:
     }
   };
 
+  const getAnimation = (opt: typeof SHAPE_EMOJIS[0], isCorrect: boolean, isWrong: boolean) => {
+    if (isWrong) return { x: [-10, 10, -10, 10, 0] };
+    if (isCorrect) return { scale: [1, 1.2, 1] };
+    
+    if (level >= 5) {
+      const randomDelay = Math.random() * 2;
+      return {
+        y: [0, -10, 0],
+        rotate: [0, 5, -5, 0],
+        transition: {
+          duration: 2,
+          repeat: Infinity,
+          delay: randomDelay,
+          ease: "easeInOut"
+        }
+      };
+    }
+    if (level >= 4) {
+      const randomDelay = Math.random() * 2;
+      return {
+        y: [0, -5, 0],
+        transition: {
+          duration: 2,
+          repeat: Infinity,
+          delay: randomDelay,
+          ease: "easeInOut"
+        }
+      };
+    }
+    return {};
+  };
+
+  const targetName = state.askForColor ? state.targetShape.name : state.targetShape.base;
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-8 mt-4 w-full">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`flex flex-col items-center gap-8 mt-4 w-full ${level >= 6 ? 'bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-100 via-slate-50 to-white rounded-3xl p-4' : ''}`}>
       {showConfetti && <Confetti />}
       <LevelComplete show={showConfetti} />
       <h2 className="text-3xl font-bold text-slate-700">Find the:</h2>
       <div className="text-5xl sm:text-6xl font-black text-teal-600">
-        {state.targetShape.name}
+        {targetName}
       </div>
-      <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-4 max-w-lg">
-        {state.options.map(opt => {
+      <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-4 max-w-2xl">
+        {state.options.map((opt, i) => {
           const isSelected = selectedAnswer === opt.name;
           const isCorrect = isSelected && feedback === 'correct';
           const isWrong = isSelected && feedback === 'wrong';
           
           return (
             <motion.button
-              key={opt.name}
+              key={`${opt.name}-${i}`}
               onClick={() => handleAnswer(opt)}
-              animate={isWrong ? { x: [-10, 10, -10, 10, 0] } : isCorrect ? { scale: [1, 1.2, 1] } : {}}
+              animate={getAnimation(opt, isCorrect, isWrong)}
               className={`w-24 h-24 sm:w-32 sm:h-32 rounded-2xl shadow-lg border-b-8 active:border-b-0 active:translate-y-2 transition-all flex items-center justify-center text-6xl sm:text-7xl
                 ${isCorrect ? 'bg-green-100 border-green-300 ring-4 ring-green-400' : 
                   isWrong ? 'bg-red-100 border-red-300 ring-4 ring-red-400' : 
